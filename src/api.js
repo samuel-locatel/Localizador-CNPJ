@@ -75,4 +75,43 @@ function mapApiResponse(cnpj, data) {
   };
 }
 
-module.exports = { validateCnpj, mapApiResponse, sleep };
+const RATE_LIMIT_MS = 12000; // 5 per minute = 1 every 12s
+
+function errorRow(cnpj, status) {
+  return {
+    'CNPJ': cnpj,
+    'STATUS': status,
+    'Razão Social': '', 'Fantasia': '', 'EMAIL': '', 'FONE': '',
+    'RESP': '', 'SÓCIO ADMINISTRADOR': '', 'ENDEREÇO': '', 'BAIRRO': '',
+    'CEP': '', 'CIDADE': '', 'ESTADO': '', 'CNAE PRINCIPAL': '', 'CNAES SECUNDÁRIOS': '',
+  };
+}
+
+async function lookupCnpj(cnpj) {
+  if (!validateCnpj(cnpj)) {
+    return errorRow(cnpj, 'CNPJ INVÁLIDO');
+  }
+
+  // Rate limiting: wait until 12s have passed since last request
+  const elapsed = Date.now() - lastRequestTime;
+  if (elapsed < RATE_LIMIT_MS) {
+    await sleep(RATE_LIMIT_MS - elapsed);
+  }
+  lastRequestTime = Date.now();
+
+  const digits = cnpj.replace(/\D/g, '');
+  try {
+    const response = await axios.get(`https://publica.cnpj.ws/cnpj/${digits}`, {
+      timeout: 30000,
+      headers: { 'Accept': 'application/json' },
+    });
+    return mapApiResponse(cnpj, response.data);
+  } catch (err) {
+    const status = err.response && err.response.status === 404
+      ? 'NÃO ENCONTRADO'
+      : 'ERRO API';
+    return errorRow(cnpj, status);
+  }
+}
+
+module.exports = { validateCnpj, mapApiResponse, lookupCnpj, sleep };

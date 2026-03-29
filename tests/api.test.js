@@ -1,4 +1,6 @@
 const { validateCnpj, mapApiResponse } = require('../src/api');
+const axios = require('axios');
+jest.mock('axios');
 
 describe('validateCnpj', () => {
   it('accepts valid formatted CNPJ', () => {
@@ -96,5 +98,65 @@ describe('mapApiResponse', () => {
     expect(row['EMAIL']).toBe('');
     expect(row['SÓCIO ADMINISTRADOR']).toBe('');
     expect(row['CNAES SECUNDÁRIOS']).toBe('');
+  });
+});
+
+describe('lookupCnpj', () => {
+  let lookupCnpj;
+  let axiosMock;
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.mock('axios');
+    axiosMock = require('axios');
+    lookupCnpj = require('../src/api').lookupCnpj;
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns mapped row on success', async () => {
+    axiosMock.get.mockResolvedValue({
+      data: {
+        cnpj: '11222333000181',
+        razao_social: 'EMPRESA LTDA',
+        ddd_telefone_1: '11',
+        telefone_1: '999999999',
+        socios: [],
+        cnaes_secundarios: [],
+      },
+    });
+    const row = await lookupCnpj('11.222.333/0001-81');
+    expect(row['STATUS']).toBe('OK');
+    expect(row['Razão Social']).toBe('EMPRESA LTDA');
+    expect(axiosMock.get).toHaveBeenCalledWith(
+      'https://publica.cnpj.ws/cnpj/11222333000181',
+      expect.any(Object)
+    );
+  });
+
+  it('returns CNPJ INVÁLIDO for invalid CNPJ without calling API', async () => {
+    const row = await lookupCnpj('00.000.000/0000-00');
+    expect(row['STATUS']).toBe('CNPJ INVÁLIDO');
+    expect(axiosMock.get).not.toHaveBeenCalled();
+  });
+
+  it('returns NÃO ENCONTRADO on 404', async () => {
+    axiosMock.get.mockRejectedValue({ response: { status: 404 } });
+    const row = await lookupCnpj('11.222.333/0001-81');
+    expect(row['STATUS']).toBe('NÃO ENCONTRADO');
+  });
+
+  it('returns ERRO API on 5xx', async () => {
+    axiosMock.get.mockRejectedValue({ response: { status: 500 } });
+    const row = await lookupCnpj('11.222.333/0001-81');
+    expect(row['STATUS']).toBe('ERRO API');
+  });
+
+  it('returns ERRO API on network timeout', async () => {
+    axiosMock.get.mockRejectedValue({ code: 'ECONNABORTED' });
+    const row = await lookupCnpj('11.222.333/0001-81');
+    expect(row['STATUS']).toBe('ERRO API');
   });
 });
