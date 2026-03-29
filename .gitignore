@@ -1,4 +1,5 @@
 node_modules/
+coverage/
 *.progress.json
 *_resultado.xlsx
 .env
