@@ -49,4 +49,19 @@ describe('readCnpjs', () => {
     expect(result).toHaveLength(2);
     fs.unlinkSync(file);
   });
+
+  it('deduplicates CNPJs keeping first occurrence', async () => {
+    const file = await createTempXlsx([
+      ['CNPJ'],
+      ['11.222.333/0001-81'],
+      ['22.333.444/0001-70'],
+      ['11.222.333/0001-81'],
+      ['22.333.444/0001-70'],
+    ]);
+    const result = await readCnpjs(file);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({ row: 2, cnpj: '11.222.333/0001-81' });
+    expect(result[1]).toEqual({ row: 3, cnpj: '22.333.444/0001-70' });
+    fs.unlinkSync(file);
+  });
 });

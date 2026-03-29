@@ -5,7 +5,7 @@ const cnpja = new CnpjaOpen();
 function validateCnpj(raw) {
   const digits = raw.replace(/\D/g, '');
   if (digits.length !== 14) return false;
-  if (/^(\d)\1+$/.test(digits)) return false; // all same digits
+  if (/^(\d)\1+$/.test(digits)) return false;
 
   function calcDigit(slice, weights) {
     const sum = slice.split('').reduce((acc, d, i) => acc + parseInt(d) * weights[i], 0);
@@ -81,7 +81,7 @@ function mapApiResponse(cnpj, data) {
   };
 }
 
-const RATE_LIMIT_MS = 12000; // 5 per minute = 1 every 12s
+const RATE_LIMIT_MS = 12000;
 
 function errorRow(cnpj, status) {
   return {
@@ -98,7 +98,6 @@ async function lookupCnpj(cnpj) {
     return errorRow(cnpj, 'CNPJ INVÁLIDO');
   }
 
-  // Rate limiting: wait until 12s have passed since last request
   const elapsed = Date.now() - lastRequestTime;
   if (elapsed < RATE_LIMIT_MS) {
     await sleep(RATE_LIMIT_MS - elapsed);

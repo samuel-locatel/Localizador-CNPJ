@@ -17,10 +17,8 @@ async function saveResults(outputPath, rows) {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Resultado');
 
-  // Header row
   worksheet.addRow(COLUMNS);
 
-  // Style header
   const headerRow = worksheet.getRow(1);
   headerRow.font = { bold: true };
   headerRow.fill = {
@@ -29,12 +27,10 @@ async function saveResults(outputPath, rows) {
     fgColor: { argb: 'FFD3D3D3' },
   };
 
-  // Data rows
   for (const row of rows) {
     worksheet.addRow(COLUMNS.map(col => row[col] !== undefined ? row[col] : ''));
   }
 
-  // Auto-fit column widths (approximate)
   worksheet.columns.forEach(col => {
     col.width = 20;
   });

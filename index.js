@@ -17,7 +17,6 @@ async function main() {
   const progressPath = absInput.replace(/\.xlsx$/i, '.progress.json');
   const outputPath = buildOutputPath(absInput);
 
-  // Read all CNPJs from input file
   let entries;
   try {
     entries = await readCnpjs(absInput);
@@ -54,7 +53,6 @@ async function main() {
 
   bar.start(total, done.size, { ok: 0, errors: 0, eta_formatted: '--' });
 
-  // SIGINT handler for graceful shutdown
   process.on('SIGINT', async () => {
     interrupted = true;
     bar.stop();
@@ -81,14 +79,13 @@ async function main() {
 
     const processed = done.size + results.length;
     const elapsed = (Date.now() - startTime) / 1000;
-    const rate = results.length / elapsed; // rows per second
+    const rate = results.length / elapsed;
     const remaining = pending.length - results.length;
     const etaSec = rate > 0 ? remaining / rate : 0;
     const etaFormatted = formatEta(etaSec);
 
     bar.update(processed, { ok: okCount, errors: errCount, eta_formatted: etaFormatted });
 
-    // Incremental save every 100 rows
     if (results.length % 100 === 0) {
       await saveResults(outputPath, results);
     }
