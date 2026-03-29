@@ -1,4 +1,6 @@
-const axios = require('axios');
+const { CnpjaOpen } = require('@cnpja/sdk');
+
+const cnpja = new CnpjaOpen();
 
 function validateCnpj(raw) {
   const digits = raw.replace(/\D/g, '');
@@ -29,49 +31,53 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function formatCep(cep) {
-  if (!cep) return '';
-  const digits = String(cep).replace(/\D/g, '');
+function formatCep(zip) {
+  if (!zip) return '';
+  const digits = String(zip).replace(/\D/g, '');
   if (digits.length === 8) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
-  return String(cep);
+  return String(zip);
 }
 
-function formatPhone(ddd, number) {
+function formatPhone(area, number) {
   if (!number) return '';
-  if (ddd) return `(${ddd}) ${number}`;
+  if (area) return `(${area}) ${number}`;
   return String(number);
 }
 
 function mapApiResponse(cnpj, data) {
-  const socios = data.socios || [];
-  const adminSocios = socios
-    .filter(s => s.qualificacao_socio && s.qualificacao_socio.descricao &&
-      s.qualificacao_socio.descricao.toLowerCase().includes('administrador'))
-    .map(s => s.nome_socio)
+  const members = (data.company && data.company.members) || [];
+  const adminSocios = members
+    .filter(m => m.role && m.role.text && m.role.text.toLowerCase().includes('administrador'))
+    .map(m => m.person && m.person.name)
+    .filter(Boolean)
     .join('; ');
 
-  const cnaesSecundarios = (data.cnaes_secundarios || [])
-    .map(c => c.descricao)
+  const sideActivities = (data.sideActivities || [])
+    .map(a => a.text)
     .join('; ');
 
-  const endereco = [data.logradouro, data.numero].filter(Boolean).join(', ');
+  const address = data.address || {};
+  const phones = data.phones || [];
+  const emails = data.emails || [];
+
+  const endereco = [address.street, address.number].filter(Boolean).join(', ');
 
   return {
     'CNPJ': cnpj,
     'STATUS': 'OK',
-    'Razão Social': data.razao_social || '',
-    'Fantasia': data.nome_fantasia || '',
-    'EMAIL': data.email || '',
-    'FONE': formatPhone(data.ddd_telefone_1, data.telefone_1),
-    'RESP': data.responsavel_federativo || '',
+    'Razão Social': (data.company && data.company.name) || '',
+    'Fantasia': data.alias || '',
+    'EMAIL': (emails[0] && emails[0].address) || '',
+    'FONE': formatPhone(phones[0] && phones[0].area, phones[0] && phones[0].number),
+    'RESP': (data.company && data.company.jurisdiction) || '',
     'SÓCIO ADMINISTRADOR': adminSocios,
     'ENDEREÇO': endereco,
-    'BAIRRO': data.bairro || '',
-    'CEP': formatCep(data.cep),
-    'CIDADE': data.municipio || '',
-    'ESTADO': data.uf || '',
-    'CNAE PRINCIPAL': data.cnae_fiscal_descricao || '',
-    'CNAES SECUNDÁRIOS': cnaesSecundarios,
+    'BAIRRO': address.district || '',
+    'CEP': formatCep(address.zip),
+    'CIDADE': address.city || '',
+    'ESTADO': address.state || '',
+    'CNAE PRINCIPAL': (data.mainActivity && data.mainActivity.text) || '',
+    'CNAES SECUNDÁRIOS': sideActivities,
   };
 }
 
@@ -101,15 +107,10 @@ async function lookupCnpj(cnpj) {
 
   const digits = cnpj.replace(/\D/g, '');
   try {
-    const response = await axios.get(`https://publica.cnpj.ws/cnpj/${digits}`, {
-      timeout: 30000,
-      headers: { 'Accept': 'application/json' },
-    });
-    return mapApiResponse(cnpj, response.data);
+    const office = await cnpja.office.read({ taxId: digits });
+    return mapApiResponse(cnpj, office);
   } catch (err) {
-    const status = err.response && err.response.status === 404
-      ? 'NÃO ENCONTRADO'
-      : 'ERRO API';
+    const status = err.code === 404 ? 'NÃO ENCONTRADO' : 'ERRO API';
     return errorRow(cnpj, status);
   }
 }

@@ -1,6 +1,4 @@
 const { validateCnpj, mapApiResponse } = require('../src/api');
-const axios = require('axios');
-jest.mock('axios');
 
 describe('validateCnpj', () => {
   it('accepts valid formatted CNPJ', () => {
@@ -28,27 +26,36 @@ describe('validateCnpj', () => {
 
 describe('mapApiResponse', () => {
   const mockResponse = {
-    cnpj: '11222333000181',
-    razao_social: 'EMPRESA LTDA',
-    nome_fantasia: 'EMPRESA',
-    email: 'contato@empresa.com.br',
-    ddd_telefone_1: '11',
-    telefone_1: '999999999',
-    responsavel_federativo: 'JOAO DA SILVA',
-    socios: [
-      { nome_socio: 'JOAO DA SILVA', qualificacao_socio: { descricao: 'Sócio-Administrador' } },
-      { nome_socio: 'MARIA SILVA', qualificacao_socio: { descricao: 'Sócio' } },
-    ],
-    logradouro: 'RUA EXEMPLO',
-    numero: '100',
-    bairro: 'CENTRO',
-    cep: '01310100',
-    municipio: 'SAO PAULO',
-    uf: 'SP',
-    cnae_fiscal_descricao: 'Desenvolvimento de programas de computador',
-    cnaes_secundarios: [
-      { descricao: 'Consultoria em TI' },
-      { descricao: 'Suporte técnico' },
+    taxId: '11222333000181',
+    alias: 'EMPRESA',
+    company: {
+      name: 'EMPRESA LTDA',
+      jurisdiction: 'JOAO DA SILVA',
+      members: [
+        {
+          person: { name: 'JOAO DA SILVA' },
+          role: { text: 'Sócio-Administrador' },
+        },
+        {
+          person: { name: 'MARIA SILVA' },
+          role: { text: 'Sócio' },
+        },
+      ],
+    },
+    phones: [{ area: '11', number: '999999999' }],
+    emails: [{ address: 'contato@empresa.com.br' }],
+    address: {
+      street: 'RUA EXEMPLO',
+      number: '100',
+      district: 'CENTRO',
+      zip: '01310100',
+      city: 'SAO PAULO',
+      state: 'SP',
+    },
+    mainActivity: { text: 'Desenvolvimento de programas de computador' },
+    sideActivities: [
+      { text: 'Consultoria em TI' },
+      { text: 'Suporte técnico' },
     ],
   };
 
@@ -74,25 +81,26 @@ describe('mapApiResponse', () => {
   it('joins multiple admin socios with semicolon', () => {
     const data = {
       ...mockResponse,
-      socios: [
-        { nome_socio: 'A', qualificacao_socio: { descricao: 'Sócio-Administrador' } },
-        { nome_socio: 'B', qualificacao_socio: { descricao: 'Sócio-Administrador' } },
-      ],
+      company: {
+        ...mockResponse.company,
+        members: [
+          { person: { name: 'A' }, role: { text: 'Sócio-Administrador' } },
+          { person: { name: 'B' }, role: { text: 'Sócio-Administrador' } },
+        ],
+      },
     };
     const row = mapApiResponse('11.222.333/0001-81', data);
     expect(row['SÓCIO ADMINISTRADOR']).toBe('A; B');
   });
 
   it('formats CEP with hyphen', () => {
-    const row = mapApiResponse('11.222.333/0001-81', { ...mockResponse, cep: '01310100' });
+    const data = { ...mockResponse, address: { ...mockResponse.address, zip: '01310100' } };
+    const row = mapApiResponse('11.222.333/0001-81', data);
     expect(row['CEP']).toBe('01310-100');
   });
 
   it('handles missing optional fields gracefully', () => {
-    const minimal = {
-      cnpj: '11222333000181',
-      razao_social: 'EMPRESA LTDA',
-    };
+    const minimal = { company: { name: 'EMPRESA LTDA', members: [] } };
     const row = mapApiResponse('11.222.333/0001-81', minimal);
     expect(row['STATUS']).toBe('OK');
     expect(row['EMAIL']).toBe('');
@@ -103,12 +111,16 @@ describe('mapApiResponse', () => {
 
 describe('lookupCnpj', () => {
   let lookupCnpj;
-  let axiosMock;
+  let mockRead;
 
   beforeEach(() => {
     jest.resetModules();
-    jest.mock('axios');
-    axiosMock = require('axios');
+    mockRead = jest.fn();
+    jest.doMock('@cnpja/sdk', () => ({
+      CnpjaOpen: jest.fn().mockImplementation(() => ({
+        office: { read: mockRead },
+      })),
+    }));
     lookupCnpj = require('../src/api').lookupCnpj;
   });
 
@@ -117,45 +129,42 @@ describe('lookupCnpj', () => {
   });
 
   it('returns mapped row on success', async () => {
-    axiosMock.get.mockResolvedValue({
-      data: {
-        cnpj: '11222333000181',
-        razao_social: 'EMPRESA LTDA',
-        ddd_telefone_1: '11',
-        telefone_1: '999999999',
-        socios: [],
-        cnaes_secundarios: [],
-      },
+    mockRead.mockResolvedValue({
+      taxId: '11222333000181',
+      alias: 'EMPRESA',
+      company: { name: 'EMPRESA LTDA', jurisdiction: '', members: [] },
+      phones: [{ area: '11', number: '999999999' }],
+      emails: [],
+      address: { street: 'RUA A', number: '1', district: 'CENTRO', zip: '01310100', city: 'SP', state: 'SP' },
+      mainActivity: { text: 'TI' },
+      sideActivities: [],
     });
     const row = await lookupCnpj('11.222.333/0001-81');
     expect(row['STATUS']).toBe('OK');
     expect(row['Razão Social']).toBe('EMPRESA LTDA');
-    expect(axiosMock.get).toHaveBeenCalledWith(
-      'https://publica.cnpj.ws/cnpj/11222333000181',
-      expect.any(Object)
-    );
+    expect(mockRead).toHaveBeenCalledWith({ taxId: '11222333000181' });
   });
 
   it('returns CNPJ INVÁLIDO for invalid CNPJ without calling API', async () => {
     const row = await lookupCnpj('00.000.000/0000-00');
     expect(row['STATUS']).toBe('CNPJ INVÁLIDO');
-    expect(axiosMock.get).not.toHaveBeenCalled();
+    expect(mockRead).not.toHaveBeenCalled();
   });
 
   it('returns NÃO ENCONTRADO on 404', async () => {
-    axiosMock.get.mockRejectedValue({ response: { status: 404 } });
+    mockRead.mockRejectedValue({ code: 404 });
     const row = await lookupCnpj('11.222.333/0001-81');
     expect(row['STATUS']).toBe('NÃO ENCONTRADO');
   });
 
   it('returns ERRO API on 5xx', async () => {
-    axiosMock.get.mockRejectedValue({ response: { status: 500 } });
+    mockRead.mockRejectedValue({ code: 500 });
     const row = await lookupCnpj('11.222.333/0001-81');
     expect(row['STATUS']).toBe('ERRO API');
   });
 
-  it('returns ERRO API on network timeout', async () => {
-    axiosMock.get.mockRejectedValue({ code: 'ECONNABORTED' });
+  it('returns ERRO API on network error', async () => {
+    mockRead.mockRejectedValue(new Error('network failure'));
     const row = await lookupCnpj('11.222.333/0001-81');
     expect(row['STATUS']).toBe('ERRO API');
   });
