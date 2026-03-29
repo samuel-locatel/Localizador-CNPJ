@@ -29,4 +29,50 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-module.exports = { validateCnpj, sleep };
+function formatCep(cep) {
+  if (!cep) return '';
+  const digits = String(cep).replace(/\D/g, '');
+  if (digits.length === 8) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return String(cep);
+}
+
+function formatPhone(ddd, number) {
+  if (!number) return '';
+  if (ddd) return `(${ddd}) ${number}`;
+  return String(number);
+}
+
+function mapApiResponse(cnpj, data) {
+  const socios = data.socios || [];
+  const adminSocios = socios
+    .filter(s => s.qualificacao_socio && s.qualificacao_socio.descricao &&
+      s.qualificacao_socio.descricao.toLowerCase().includes('administrador'))
+    .map(s => s.nome_socio)
+    .join('; ');
+
+  const cnaesSecundarios = (data.cnaes_secundarios || [])
+    .map(c => c.descricao)
+    .join('; ');
+
+  const endereco = [data.logradouro, data.numero].filter(Boolean).join(', ');
+
+  return {
+    'CNPJ': cnpj,
+    'STATUS': 'OK',
+    'Razão Social': data.razao_social || '',
+    'Fantasia': data.nome_fantasia || '',
+    'EMAIL': data.email || '',
+    'FONE': formatPhone(data.ddd_telefone_1, data.telefone_1),
+    'RESP': data.responsavel_federativo || '',
+    'SÓCIO ADMINISTRADOR': adminSocios,
+    'ENDEREÇO': endereco,
+    'BAIRRO': data.bairro || '',
+    'CEP': formatCep(data.cep),
+    'CIDADE': data.municipio || '',
+    'ESTADO': data.uf || '',
+    'CNAE PRINCIPAL': data.cnae_fiscal_descricao || '',
+    'CNAES SECUNDÁRIOS': cnaesSecundarios,
+  };
+}
+
+module.exports = { validateCnpj, mapApiResponse, sleep };
