@@ -1,9 +1,9 @@
 node_modules/
 coverage/
+docs/
 *.progress.json
 *_resultado.xlsx
 .env
 .env.local
 .DS_Store
 *.log
-docs/
