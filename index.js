@@ -2,16 +2,28 @@ const path = require('path');
 const cliProgress = require('cli-progress');
 const { readCnpjs } = require('./src/reader');
 const { loadProgress, markDone, clearProgress } = require('./src/progress');
-const { lookupCnpj } = require('./src/api');
 const { buildOutputPath, saveResults } = require('./src/writer');
+
+const APIS = {
+  cnpjws: './src/cnpjws',
+  cnpja: './src/cnpja',
+};
 
 async function main() {
   const inputPath = process.argv[2];
+  const apiName = (process.argv[3] || 'cnpjws').toLowerCase();
 
   if (!inputPath) {
-    console.error('Uso: node index.js <arquivo.xlsx>');
+    console.error('Uso: node index.js <arquivo.xlsx> [cnpjws|cnpja]');
     process.exit(1);
   }
+
+  if (!APIS[apiName]) {
+    console.error(`API inválida: "${apiName}". Use cnpjws ou cnpja.`);
+    process.exit(1);
+  }
+
+  const { lookupCnpj } = require(APIS[apiName]);
 
   const absInput = path.resolve(inputPath);
   const progressPath = absInput.replace(/\.xlsx$/i, '.progress.json');
@@ -35,6 +47,7 @@ async function main() {
   let interrupted = false;
 
   console.log(`\nArquivo: ${path.basename(absInput)}`);
+  console.log(`API: ${apiName}`);
   console.log(`Total de CNPJs: ${total}`);
   if (done.size > 0) {
     console.log(`Retomando: ${done.size} já processados, ${pending.length} restantes\n`);

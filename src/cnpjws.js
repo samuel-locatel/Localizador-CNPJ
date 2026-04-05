@@ -1,7 +1,4 @@
-const { CnpjaOpen } = require("@cnpja/sdk");
-
-const cnpja = new CnpjaOpen();
-cnpja.setup({ retryLimit: 0 });
+const axios = require("axios");
 
 function validateCnpj(raw) {
   const digits = raw.replace(/\D/g, "");
@@ -48,51 +45,48 @@ function formatPhone(area, number) {
 }
 
 function mapApiResponse(cnpj, data) {
-  const members = (data.company && data.company.members) || [];
-  const adminSocios = members
+  const estab = data.estabelecimento || {};
+
+  const adminSocios = (data.socios || [])
     .filter(
-      (m) =>
-        m.role &&
-        m.role.text &&
-        m.role.text.toLowerCase().includes("administrador"),
+      (s) =>
+        s.qualificacao_socio &&
+        s.qualificacao_socio.descricao &&
+        s.qualificacao_socio.descricao.toLowerCase().includes("administrador"),
     )
-    .map((m) => m.person && m.person.name)
+    .map((s) => s.nome)
     .filter(Boolean)
     .join("; ");
 
-  const sideActivities = (data.sideActivities || [])
-    .map((a) => a.text)
+  const sideActivities = (estab.atividades_secundarias || [])
+    .map((a) => a.descricao)
     .join("; ");
 
-  const address = data.address || {};
-  const phones = data.phones || [];
-  const emails = data.emails || [];
-
-  const endereco = [address.street, address.number].filter(Boolean).join(", ");
+  const endereco = [estab.tipo_logradouro, estab.logradouro, estab.numero]
+    .filter(Boolean)
+    .join(" ");
 
   return {
     CNPJ: cnpj,
     STATUS: "OK",
-    "Razão Social": (data.company && data.company.name) || "",
-    Fantasia: data.alias || "",
-    EMAIL: (emails[0] && emails[0].address) || "",
-    FONE: formatPhone(
-      phones[0] && phones[0].area,
-      phones[0] && phones[0].number,
-    ),
-    RESP: (data.company && data.company.jurisdiction) || "",
+    "Razão Social": data.razao_social || "",
+    Fantasia: estab.nome_fantasia || "",
+    EMAIL: estab.email || "",
+    FONE: formatPhone(estab.ddd1, estab.telefone1),
+    RESP: data.responsavel_federativo || "",
     "SÓCIO ADMINISTRADOR": adminSocios,
     ENDEREÇO: endereco,
-    BAIRRO: address.district || "",
-    CEP: formatCep(address.zip),
-    CIDADE: address.city || "",
-    ESTADO: address.state || "",
-    "CNAE PRINCIPAL": (data.mainActivity && data.mainActivity.text) || "",
+    BAIRRO: estab.bairro || "",
+    CEP: formatCep(estab.cep),
+    CIDADE: (estab.cidade && estab.cidade.nome) || "",
+    ESTADO: (estab.estado && estab.estado.sigla) || "",
+    "CNAE PRINCIPAL":
+      (estab.atividade_principal && estab.atividade_principal.descricao) || "",
     "CNAES SECUNDÁRIOS": sideActivities,
   };
 }
 
-const RATE_LIMIT_MS = 15000;
+const RATE_LIMIT_MS = 20000;
 
 function errorRow(cnpj, status) {
   return {
@@ -127,11 +121,16 @@ async function lookupCnpj(cnpj) {
 
   const digits = cnpj.replace(/\D/g, "");
   try {
-    const office = await cnpja.office.read({ taxId: digits });
-    return mapApiResponse(cnpj, office);
+    const { data } = await axios.get(
+      `https://publica.cnpj.ws/cnpj/${digits}`,
+    );
+    return mapApiResponse(cnpj, data);
   } catch (err) {
-    console.error(`Erro ao consultar CNPJ ${cnpj}:`, err);
-    const status = err.code === 404 ? "NÃO ENCONTRADO" : "ERRO API";
+    console.error(`Erro ao consultar CNPJ ${cnpj}:`, err.message || err);
+    const status =
+      err.response && err.response.status === 404
+        ? "NÃO ENCONTRADO"
+        : "ERRO API";
     return errorRow(cnpj, status);
   }
 }
